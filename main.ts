@@ -53,24 +53,25 @@ type Mode = { color: number, bpp: number, pixels: Buffer, palette?: Buffer, trns
 function modesFor(width: number, height: number, rgba: Buffer): Mode[] {
   const n = width * height;
   let alphaOpaque = true, gray = true;
-  const seen = new Map<number, number>();
+  const seen = new Map<number, number>(); const counts = new Map<number, number>();
   for (let i = 0; i < n; i++) {
     const p = i * 4, r = rgba[p], g = rgba[p + 1], b = rgba[p + 2], a = rgba[p + 3];
     if (a !== 255) alphaOpaque = false;
     if (r !== g || r !== b) gray = false;
     const key = ((r << 24) | (g << 16) | (b << 8) | a) >>> 0;
-    if (!seen.has(key)) seen.set(key, seen.size);
+    if (!seen.has(key)) seen.set(key, seen.size); counts.set(key, (counts.get(key) || 0) + 1);
     if (seen.size > 256 && !alphaOpaque && !gray) break;
   }
   const modes: Mode[] = [];
   const canPal = seen.size <= 256;
   if (canPal) {
     const idx = Buffer.alloc(n), pal: number[] = [], al: number[] = [];
-    const entries = [...seen.entries()].sort((a, b) => a[1] - b[1]);
+    const entries = [...seen.entries()].sort((a, b) => (counts.get(b[0])! - counts.get(a[0])!) || (a[1] - b[1]));
+    const remap = new Map<number, number>(); entries.forEach(([key], i) => remap.set(key, i));
     for (const [key] of entries) { pal.push((key >>> 24) & 255, (key >>> 16) & 255, (key >>> 8) & 255); al.push(key & 255); }
     for (let i = 0; i < n; i++) {
       const p = i * 4, key = ((rgba[p] << 24) | (rgba[p + 1] << 16) | (rgba[p + 2] << 8) | rgba[p + 3]) >>> 0;
-      idx[i] = seen.get(key)!;
+      idx[i] = remap.get(key)!;
     }
     let lastAlpha = -1; for (let i = 0; i < al.length; i++) if (al[i] !== 255) lastAlpha = i;
     modes.push({ color: 3, bpp: 1, pixels: idx, palette: Buffer.from(pal), trns: lastAlpha >= 0 ? Buffer.from(al.slice(0, lastAlpha + 1)) : undefined });
